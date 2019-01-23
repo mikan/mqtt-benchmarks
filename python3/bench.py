@@ -27,9 +27,11 @@ class Client:
         self.n_publish = 0
         self.n_receives = 0
         self.done = False
+        self.gap_ms = 1
 
-    def bench(self, n_publish):
+    def bench(self, n_publish, gap_ms):
         self.n_publish = n_publish
+        self.gap_ms = gap_ms
         self.client.on_subscribe = self.on_subscribe
         self.client.on_message = self.on_message
         self.client.on_disconnect = self.on_disconnect
@@ -38,7 +40,6 @@ class Client:
         self.client.loop_start()
         while self.n_receives < self.n_publish:
             time.sleep(0.1)
-            pass
         self.client.unsubscribe(self.LOAD_TOPIC)
         self.client.loop_stop()
         print("[BENCH] done. %d messages received." % self.n_receives)
@@ -47,7 +48,7 @@ class Client:
 
     def on_subscribe(self, client, _userdata, _mid, _granted_qos):
         print("[BENCH] subscribe " + self.LOAD_TOPIC)
-        client.publish(self.CMD_TOPIC, """{"n_publish":%d}""" % self.n_publish)
+        client.publish(self.CMD_TOPIC, """{"n_publish":%d, "gap_ms":%d}""" % (self.n_publish, self.gap_ms))
         print("[BENCH] loading...")
 
     def on_message(self, _client, _userdata, _msg):
@@ -64,9 +65,10 @@ def main():
     parser.add_argument("-host", type=str, default="localhost", help="MQTT broker host name")
     parser.add_argument("-port", type=int, default=1883, help="MQTT broker port number")
     parser.add_argument("-n", type=int, default=1000, help="Number of publishes")
+    parser.add_argument("-gap", type=int, default=1, help="Gap time between publishes as milliseconds")
     args = parser.parse_args()
     client = Client(args.host, args.port)
-    client.bench(args.n)
+    client.bench(args.n, args.gap)
 
 
 if __name__ == '__main__':

@@ -23,7 +23,8 @@ type Client struct {
 }
 
 type cmdMessage struct {
-	NPublish int `json:"n_publish"`
+	NPublish        int `json:"n_publish"`
+	GapMilliseconds int `json:"gap_ms"`
 }
 
 // NewClient will creates MQTT client instance.
@@ -71,25 +72,27 @@ func handleLoad(client mqtt.Client, msg mqtt.Message) {
 	if err := json.Unmarshal(msg.Payload(), &cmd); err != nil {
 		log.Printf("failed to parse cmd message: %v", err)
 	}
-	log.Printf("%s received. n=%d", cmdTopic, cmd.NPublish)
+	log.Printf("%s received. n=%d gap=%d", cmdTopic, cmd.NPublish, cmd.GapMilliseconds)
 	for i := 0; i < cmd.NPublish; i++ {
-		time.Sleep(1 * time.Millisecond)
 		payload := fmt.Sprintf(`{"count":%d}`, i+1)
 		if token := client.Publish(loadTopic, 1, false, payload); token.Wait() && token.Error() != nil {
 			log.Printf("failed to publish %s: %v", loadTopic, token.Error())
+		}
+		if cmd.GapMilliseconds > 0 {
+			time.Sleep(time.Duration(cmd.GapMilliseconds) * time.Millisecond)
 		}
 	}
 }
 
 // Bench sends message to loader and receives traffic.
-func (c *Client) Bench(nPublish int) error {
+func (c *Client) Bench(nPublish, gapMilliseconds int) error {
 	c.receives = make(chan struct{}, nPublish)
 	c.nPublish = nPublish
 	if token := c.client.Subscribe(loadTopic, 1, c.handleBench); token.Wait() && token.Error() != nil {
 		return fmt.Errorf("failed to subscribe %s: %v", loadTopic, token.Error())
 	}
 	log.Printf("subscribe %s", loadTopic)
-	payload, err := json.Marshal(cmdMessage{NPublish: nPublish})
+	payload, err := json.Marshal(cmdMessage{NPublish: nPublish, GapMilliseconds: 0})
 	if err != nil {
 		return fmt.Errorf("failed to build message: %v", err)
 	}

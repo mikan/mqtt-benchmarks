@@ -35,14 +35,14 @@ class Client {
     /**
      * Sends start message to loader and receives traffic.
      *
-     * @param nPublish number of publishes
+     * @param nPublish        number of publishes
+     * @param gapMilliseconds gap time between publishes as milliseconds
      */
-    void Bench(int nPublish) {
+    void Bench(int nPublish, int gapMilliseconds) {
         var countDownLatch = new CountDownLatch(nPublish);
+        IMqttMessageListener handler = (topic, message) -> countDownLatch.countDown();
         try {
-            client.subscribeWithResponse(LOAD_TOPIC, 1, (topic, message) -> {
-                countDownLatch.countDown();
-            }).waitForCompletion();
+            client.subscribeWithResponse(LOAD_TOPIC, 1, handler).waitForCompletion();
             LOG.info("subscribe " + LOAD_TOPIC);
         } catch (MqttException e) {
             throw new RuntimeException("Failed to subscribe " + LOAD_TOPIC + ".", e);
@@ -51,6 +51,7 @@ class Client {
         try {
             var msg = new CommandMessage();
             msg.nPublish = nPublish;
+            msg.gapMilliseconds = gapMilliseconds;
             payload = new ObjectMapper().writeValueAsString(msg);
         } catch (JsonProcessingException e) {
             throw new RuntimeException("Failed to build command message.", e);
@@ -82,5 +83,8 @@ class Client {
     private static class CommandMessage {
         @JsonProperty("n_publish")
         private int nPublish;
+
+        @JsonProperty("gap_ms")
+        private int gapMilliseconds;
     }
 }
