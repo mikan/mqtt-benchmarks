@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"sync"
 	"time"
 
 	"github.com/eclipse/paho.mqtt.golang"
@@ -18,11 +17,9 @@ const (
 
 // Client implements MQTT client.
 type Client struct {
-	client        mqtt.Client
-	nPublish      int
-	nReceives     int
-	nReceivesLock sync.Mutex
-	done          chan struct{}
+	client   mqtt.Client
+	nPublish int
+	receives chan struct{}
 }
 
 type cmdMessage struct {
@@ -86,7 +83,7 @@ func handleLoad(client mqtt.Client, msg mqtt.Message) {
 
 // Bench sends message to loader and receives traffic.
 func (c *Client) Bench(nPublish int) error {
-	c.done = make(chan struct{})
+	c.receives = make(chan struct{}, nPublish)
 	c.nPublish = nPublish
 	if token := c.client.Subscribe(loadTopic, 1, c.handleBench); token.Wait() && token.Error() != nil {
 		return fmt.Errorf("failed to subscribe %s: %v", loadTopic, token.Error())
@@ -100,24 +97,16 @@ func (c *Client) Bench(nPublish int) error {
 		log.Printf("failed to publish %s: %v", cmdTopic, token.Error())
 	}
 	log.Print("loading...")
-	<-c.done
-	c.nReceivesLock.Lock()
-	defer c.nReceivesLock.Unlock()
+	for i := 0; i < nPublish; i++ {
+		<-c.receives
+	}
 	if token := c.client.Unsubscribe(loadTopic); token.Wait() && token.Error() != nil {
 		log.Printf("failed to unsubscribe %s: %v", loadTopic, token.Error())
 	}
-	log.Printf("done. %d messages received.", c.nReceives)
-	if c.nReceives < nPublish {
-		log.Printf("benchmark failed. request %d, got %d.", nPublish, c.nReceives)
-	}
+	log.Printf("done. %d messages received.", c.nPublish)
 	return nil
 }
 
 func (c *Client) handleBench(_ mqtt.Client, msg mqtt.Message) {
-	c.nReceivesLock.Lock()
-	c.nReceives++
-	c.nReceivesLock.Unlock()
-	if c.nReceives >= c.nPublish {
-		c.done <- struct{}{}
-	}
+	c.receives <- struct{}{}
 }
